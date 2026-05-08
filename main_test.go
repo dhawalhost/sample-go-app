@@ -57,6 +57,29 @@ func TestAdminRequiresRole(t *testing.T) {
 	}
 }
 
+func TestAdminAllowsRequiredRole(t *testing.T) {
+	app := NewApp(testConfig(), http.DefaultClient)
+
+	session, err := app.session.Encode(Session{
+		Subject: "abc",
+		Name:    "bob",
+		Roles:   []string{"admin"},
+		Expires: time.Now().Add(time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("encode session: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: session})
+	rr := httptest.NewRecorder()
+
+	app.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+}
+
 func TestHomeShowsLoginWhenLoggedOut(t *testing.T) {
 	app := NewApp(testConfig(), http.DefaultClient)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

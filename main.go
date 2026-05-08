@@ -24,6 +24,8 @@ import (
 const sessionCookieName = "sample_session"
 const stateCookieName = "sample_oauth_state"
 
+type sessionContextKey struct{}
+
 type Config struct {
 	Port          string
 	IssuerURL     string
@@ -149,7 +151,11 @@ func (a *App) home(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) profile(w http.ResponseWriter, r *http.Request) {
-	session, _ := a.readSession(r)
+	session, ok := sessionFromContext(r.Context())
+	if !ok {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
 	a.renderPage(w, map[string]any{
 		"Title":   "Profile",
 		"Session": session,
@@ -158,7 +164,11 @@ func (a *App) profile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) admin(w http.ResponseWriter, r *http.Request) {
-	session, _ := a.readSession(r)
+	session, ok := sessionFromContext(r.Context())
+	if !ok {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
 	a.renderPage(w, map[string]any{
 		"Title":   "Admin",
 		"Session": session,
@@ -282,17 +292,23 @@ func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, err := a.readSession(r); err != nil {
+		session, err := a.readSession(r)
+		if err != nil {
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), sessionContextKey{}, session)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 func (a *App) requireRole(role string, next http.Handler) http.Handler {
 	return a.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session, _ := a.readSession(r)
+		session, ok := sessionFromContext(r.Context())
+		if !ok {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
 		for _, candidate := range session.Roles {
 			if candidate == role {
 				next.ServeHTTP(w, r)
@@ -301,6 +317,11 @@ func (a *App) requireRole(role string, next http.Handler) http.Handler {
 		}
 		http.Error(w, "forbidden", http.StatusForbidden)
 	}))
+}
+
+func sessionFromContext(ctx context.Context) (*Session, bool) {
+	session, ok := ctx.Value(sessionContextKey{}).(*Session)
+	return session, ok && session != nil
 }
 
 func (a *App) readSession(r *http.Request) (*Session, error) {
