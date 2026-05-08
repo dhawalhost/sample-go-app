@@ -1,12 +1,19 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func testConfig() Config {
 	return Config{
@@ -91,5 +98,59 @@ func TestHomeShowsLoginWhenLoggedOut(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "Login with SSO") {
 		t.Fatalf("expected login link in response")
+	}
+}
+
+func TestCallbackDoesNotLeakTokenExchangeErrorDetails(t *testing.T) {
+	cfg := testConfig()
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(strings.NewReader(`{"error":"invalid_grant","detail":"provider-internal-secret"}`)),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+	app := NewApp(cfg, client)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=abc&state=ok", nil)
+	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "ok"})
+	rr := httptest.NewRecorder()
+
+	app.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "token exchange failed") {
+		t.Fatalf("expected generic token exchange error, got %q", body)
+	}
+	if strings.Contains(body, "provider-internal-secret") || strings.Contains(body, "invalid_grant") {
+		t.Fatalf("response leaked provider details: %q", body)
+	}
+}
+
+func TestLoginSetsSecureCookieWhenTrustingForwardedProto(t *testing.T) {
+	cfg := testConfig()
+	cfg.TrustProxy = true
+	app := NewApp(cfg, http.DefaultClient)
+
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rr := httptest.NewRecorder()
+
+	app.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusFound {
+		t.Fatalf("expected redirect, got %d", rr.Code)
+	}
+	cookies := rr.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("expected state cookie")
+	}
+	if !cookies[0].Secure {
+		t.Fatal("expected secure state cookie when trusted forwarded proto is https")
 	}
 }

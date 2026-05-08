@@ -38,6 +38,8 @@ type Config struct {
 	Scopes        string
 	RoleClaim     string
 	AdminRole     string
+	CookieSecure  bool
+	TrustProxy    bool
 	SessionSecret string
 }
 
@@ -203,7 +205,7 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		Value:    state,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   a.isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   300,
 	})
@@ -235,7 +237,7 @@ func (a *App) callback(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   a.isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -250,7 +252,8 @@ func (a *App) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	claims, err := a.exchangeCode(r.Context(), code)
 	if err != nil {
-		http.Error(w, "token exchange failed: "+err.Error(), http.StatusBadGateway)
+		log.Printf("token exchange failed: %v", err)
+		http.Error(w, "token exchange failed", http.StatusBadGateway)
 		return
 	}
 	session := Session{
@@ -274,7 +277,7 @@ func (a *App) callback(w http.ResponseWriter, r *http.Request) {
 		Value:    encoded,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   a.isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   3600,
 	})
@@ -288,7 +291,7 @@ func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   a.isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(w, r, "/", http.StatusFound)
@@ -326,6 +329,20 @@ func (a *App) requireRole(role string, next http.Handler) http.Handler {
 func sessionFromContext(ctx context.Context) (*Session, bool) {
 	session, ok := ctx.Value(sessionContextKey{}).(*Session)
 	return session, ok
+}
+
+func (a *App) isHTTPS(r *http.Request) bool {
+	if r.TLS != nil || a.cfg.CookieSecure {
+		return true
+	}
+	if !a.cfg.TrustProxy {
+		return false
+	}
+	proto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+	if i := strings.Index(proto, ","); i >= 0 {
+		proto = proto[:i]
+	}
+	return strings.EqualFold(strings.TrimSpace(proto), "https")
 }
 
 func (a *App) readSession(r *http.Request) (*Session, error) {
@@ -413,6 +430,8 @@ func loadConfig(ctx context.Context, client *http.Client) (Config, error) {
 		Scopes:        defaultEnv("SSO_SCOPES", "openid profile email"),
 		RoleClaim:     defaultEnv("SSO_ROLE_CLAIM", "roles"),
 		AdminRole:     defaultEnv("SSO_ADMIN_ROLE", "admin"),
+		CookieSecure:  boolEnv("SSO_COOKIE_SECURE", false),
+		TrustProxy:    boolEnv("SSO_TRUST_PROXY_HEADERS", false),
 		SessionSecret: strings.TrimSpace(os.Getenv("SESSION_SECRET")),
 	}
 	if cfg.IssuerURL != "" && (cfg.AuthURL == "" || cfg.TokenURL == "") {
@@ -548,6 +567,20 @@ func defaultEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func boolEnv(key string, fallback bool) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	case "":
+		return fallback
+	default:
+		return fallback
+	}
 }
 
 var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>

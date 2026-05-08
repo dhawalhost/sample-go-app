@@ -40,6 +40,8 @@ export SSO_ISSUER_URL="https://YOUR_DOMAIN"
 # export SSO_SCOPES="openid profile email"
 # export SSO_ROLE_CLAIM="roles"
 # export SSO_ADMIN_ROLE="admin"
+# export SSO_COOKIE_SECURE="true"             # force Secure cookies even when app sees HTTP
+# export SSO_TRUST_PROXY_HEADERS="true"       # trust X-Forwarded-Proto for Secure cookies
 
 go run .
 ```
