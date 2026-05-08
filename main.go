@@ -185,6 +185,7 @@ func (a *App) renderPage(w http.ResponseWriter, data map[string]any) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if _, err := w.Write(buf.Bytes()); err != nil {
 		log.Printf("response write error: %v", err)
 	}
