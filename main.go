@@ -337,18 +337,15 @@ func (a *App) exchangeCode(ctx context.Context, code string) (map[string]any, er
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return nil, err
 	}
-	if a.cfg.UserInfoURL != "" {
-		if claims, err := a.userInfo(ctx, tokenResp); err == nil && stringClaim(claims, "sub") != "" {
-			return claims, nil
-		}
+	if a.cfg.UserInfoURL == "" {
+		return nil, errors.New("userinfo endpoint must be configured; refusing to trust unverified id_token claims")
 	}
-	idToken := stringClaim(tokenResp, "id_token")
-	if idToken == "" {
-		return nil, errors.New("token response missing id_token and no userinfo")
-	}
-	claims, err := parseJWTClaims(idToken)
+	claims, err := a.userInfo(ctx, tokenResp)
 	if err != nil {
 		return nil, err
+	}
+	if stringClaim(claims, "sub") == "" {
+		return nil, errors.New("userinfo response missing sub")
 	}
 	return claims, nil
 }
