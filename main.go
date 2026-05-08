@@ -172,9 +172,10 @@ func (a *App) admin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.renderPage(w, map[string]any{
-		"Title":   "Admin",
-		"Session": session,
-		"Admin":   true,
+		"Title":     "Admin",
+		"Session":   session,
+		"Admin":     true,
+		"AdminRole": a.cfg.AdminRole,
 	})
 }
 
