@@ -107,11 +107,13 @@ type App struct {
 }
 
 func main() {
-	cfg, err := loadConfig(context.Background(), http.DefaultClient)
+	oidcHTTPClient := &http.Client{Timeout: 10 * time.Second}
+
+	cfg, err := loadConfig(context.Background(), oidcHTTPClient)
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
-	app := NewApp(cfg, http.DefaultClient)
+	app := NewApp(cfg, oidcHTTPClient)
 	log.Printf("sample app listening on :%s", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, app); err != nil {
 		log.Fatal(err)
