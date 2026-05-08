@@ -565,7 +565,7 @@ var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
   {{ if .Admin }}
     <div class="card">
       <h2>Admin-only area</h2>
-      <p>Authorization works. Required role: <code>admin</code>.</p>
+      <p>Authorization works. Required role: <code>{{ .AdminRole }}</code>.</p>
     </div>
   {{ end }}
 </body>
