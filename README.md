@@ -12,6 +12,14 @@ It uses only the Go standard library and works with any OIDC/OAuth2 identity pla
 - Role-protected admin route (`/admin`)
 - Configurable role claim (default: `roles`)
 
+## Security note
+
+This project is a minimal sample/demo, not a production-ready SSO implementation. Before using this pattern in a real deployment, harden it by:
+
+- Verifying `id_token` JWT signatures and standard claims (for example `iss`, `aud`, `exp`, and where applicable `nonce`) instead of trusting token claims directly when `userinfo` is not used.
+- Requiring HTTPS for issuer, authorization, token, userinfo, and redirect/callback endpoints in non-local development environments.
+- Treating the session cookie as **signed for integrity, not encrypted for confidentiality**; do not store sensitive plaintext data in it.
+
 ## Run locally
 
 ```bash
