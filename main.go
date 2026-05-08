@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -141,7 +142,7 @@ func (a *App) routes() {
 
 func (a *App) home(w http.ResponseWriter, r *http.Request) {
 	session, _ := a.readSession(r)
-	_ = pageTemplate.Execute(w, map[string]any{
+	a.renderPage(w, map[string]any{
 		"Title":   "Sample SSO App",
 		"Session": session,
 	})
@@ -149,7 +150,7 @@ func (a *App) home(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) profile(w http.ResponseWriter, r *http.Request) {
 	session, _ := a.readSession(r)
-	_ = pageTemplate.Execute(w, map[string]any{
+	a.renderPage(w, map[string]any{
 		"Title":   "Profile",
 		"Session": session,
 		"Profile": true,
@@ -158,11 +159,23 @@ func (a *App) profile(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) admin(w http.ResponseWriter, r *http.Request) {
 	session, _ := a.readSession(r)
-	_ = pageTemplate.Execute(w, map[string]any{
+	a.renderPage(w, map[string]any{
 		"Title":   "Admin",
 		"Session": session,
 		"Admin":   true,
 	})
+}
+
+func (a *App) renderPage(w http.ResponseWriter, data map[string]any) {
+	var buf bytes.Buffer
+	if err := pageTemplate.Execute(&buf, data); err != nil {
+		log.Printf("template render error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Printf("response write error: %v", err)
+	}
 }
 
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
@@ -228,7 +241,7 @@ func (a *App) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	session := Session{
 		Subject: stringClaim(claims, "sub"),
-		Name:    firstNonEmpty(stringClaim(claims, "name"), stringClaim(claims, "preferred_username")),
+		Name:    userDisplayName(claims),
 		Email:   stringClaim(claims, "email"),
 		Roles:   roleClaims(claims, a.cfg.RoleClaim),
 		Expires: time.Now().Add(1 * time.Hour).Unix(),
@@ -378,7 +391,7 @@ func loadConfig(ctx context.Context, client *http.Client) (Config, error) {
 		Scopes:        defaultEnv("SSO_SCOPES", "openid profile email"),
 		RoleClaim:     defaultEnv("SSO_ROLE_CLAIM", "roles"),
 		AdminRole:     defaultEnv("SSO_ADMIN_ROLE", "admin"),
-		SessionSecret: defaultEnv("SESSION_SECRET", "sample-insecure-dev-secret-change-me"),
+		SessionSecret: strings.TrimSpace(os.Getenv("SESSION_SECRET")),
 	}
 	if cfg.IssuerURL != "" && (cfg.AuthURL == "" || cfg.TokenURL == "") {
 		if err := applyDiscovery(ctx, client, &cfg); err != nil {
@@ -423,6 +436,12 @@ func applyDiscovery(ctx context.Context, client *http.Client, cfg *Config) error
 		cfg.UserInfoURL = stringClaim(metadata, "userinfo_endpoint")
 	}
 	return nil
+}
+
+func userDisplayName(claims map[string]any) string {
+	name := stringClaim(claims, "name")
+	username := stringClaim(claims, "preferred_username")
+	return firstNonEmpty(name, username)
 }
 
 func randomString(size int) (string, error) {
