@@ -325,7 +325,7 @@ func (a *App) requireRole(role string, next http.Handler) http.Handler {
 
 func sessionFromContext(ctx context.Context) (*Session, bool) {
 	session, ok := ctx.Value(sessionContextKey{}).(*Session)
-	return session, ok && session != nil
+	return session, ok
 }
 
 func (a *App) readSession(r *http.Request) (*Session, error) {
